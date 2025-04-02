@@ -44,10 +44,11 @@ export class AirQualityController {
     type: AirQualityResponseDto,
   })
   async getAirQuality(
-    @Query('latitude') latitude: string,
-    @Query('longitude') longitude: string,
+    @Query() query: { latitude: string; longitude: string },
   ): Promise<AirQualityResult> {
     try {
+      const { latitude, longitude } = query;
+
       this.logger.debug(
         `Raw coordinates received: latitude=${latitude}, longitude=${longitude}`,
       );
