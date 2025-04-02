@@ -1,31 +1,51 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, INestApplication } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
-import * as cors from 'cors';
+import { Request, Response } from 'express';
+import { AbstractHttpAdapter } from '@nestjs/core';
 
-async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+let app: INestApplication;
 
-  // CORS 설정
-  app.use(cors());
+async function bootstrap(): Promise<INestApplication> {
+  if (!app) {
+    app = await NestFactory.create(AppModule);
 
-  // Validation Pipe
-  app.useGlobalPipes(new ValidationPipe());
+    // CORS 설정
+    app.enableCors({
+      origin: true,
+      methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+      credentials: true,
+    });
 
-  // Swagger 설정
-  const config = new DocumentBuilder()
-    .setTitle('Fine Dust API')
-    .setDescription('미세먼지 정보 제공 API')
-    .setVersion('1.0')
-    .build();
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api', app, document);
+    // Validation Pipe
+    app.useGlobalPipes(new ValidationPipe());
 
-  await app.listen(3000);
-  console.log('NestJS 서버가 시작되었습니다. http://localhost:3000');
+    // Swagger 설정
+    const config = new DocumentBuilder()
+      .setTitle('Fine Dust API')
+      .setDescription('미세먼지 정보 제공 API')
+      .setVersion('1.0')
+      .build();
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api', app, document);
+
+    await app.init();
+  }
+  return app;
 }
 
-bootstrap().catch((error) => {
-  console.error('서버 시작 중 오류가 발생했습니다:', error);
-});
+export default async function handler(req: Request, res: Response) {
+  try {
+    const nestApp = await bootstrap();
+    const httpAdapter = nestApp.getHttpAdapter() as AbstractHttpAdapter;
+    await httpAdapter.getInstance()(req, res);
+  } catch (error) {
+    console.error('Error handling request:', error);
+    res.status(500).json({
+      statusCode: 500,
+      message: 'Internal server error',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}

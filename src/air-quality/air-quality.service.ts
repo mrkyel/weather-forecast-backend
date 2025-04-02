@@ -114,14 +114,17 @@ export class AirQualityService {
 
   private async fetchAirQualityData(latitude: number, longitude: number) {
     try {
-      this.logger.log(
-        `Fetching air quality data from API for coordinates: ${latitude}, ${longitude}`,
+      this.logger.debug(
+        `Fetching air quality data for coordinates: lat=${latitude}, lon=${longitude}`,
       );
 
       // 먼저 시도별 대기질 데이터를 가져옵니다
-      const sidoUrl = `https://apis.data.go.kr/B552584/ArpltnInforInqireSvc/getCtprvnRltmMesureDnsty?serviceKey=${encodeURIComponent(this.airKoreaApiKey)}&returnType=json&sidoName=서울&ver=1.0`;
+      const sidoUrl = `${this.airQualityUrl}?serviceKey=${encodeURIComponent(
+        this.airKoreaApiKey,
+      )}&returnType=json&sidoName=서울&ver=1.0&pageNo=1&numOfRows=100`;
 
-      this.logger.debug('Calling sido air quality API...');
+      this.logger.debug('Air quality API URL:', sidoUrl);
+
       const sidoResponse = await firstValueFrom<AirQualityApiResponse>(
         this.httpService.get(sidoUrl, {
           headers: {
@@ -131,7 +134,7 @@ export class AirQualityService {
       );
 
       this.logger.debug(
-        'API Response:',
+        'Air quality API Response:',
         JSON.stringify(sidoResponse.data, null, 2),
       );
 
@@ -144,7 +147,7 @@ export class AirQualityService {
       }
 
       const airQualityData = sidoResponse.data.response.body.items[0];
-      this.logger.log('Successfully fetched air quality data');
+      this.logger.debug('Successfully fetched air quality data');
 
       return {
         sidoName: airQualityData.sidoName,
@@ -163,7 +166,7 @@ export class AirQualityService {
           (error as AxiosError).response?.data,
         );
       }
-      throw error;
+      throw new Error('대기질 데이터를 가져오는데 실패했습니다.');
     }
   }
 
@@ -361,30 +364,36 @@ export class AirQualityService {
       }
 
       this.logger.debug('Fetching fresh air quality data');
-      const [airQualityData, weatherData] = await Promise.all([
-        this.fetchAirQualityData(latitude, longitude),
-        this.fetchWeatherData(latitude, longitude),
-      ]);
 
-      if (!airQualityData) {
-        throw new Error('대기질 데이터를 가져올 수 없습니다.');
+      try {
+        const [airQualityData, weatherData] = await Promise.all([
+          this.fetchAirQualityData(latitude, longitude),
+          this.fetchWeatherData(latitude, longitude),
+        ]);
+
+        if (!airQualityData) {
+          throw new Error('대기질 데이터를 가져올 수 없습니다.');
+        }
+
+        const gradeInfo = this.calculateAirQualityGrade(
+          airQualityData.pm10Value,
+          airQualityData.pm25Value,
+        );
+
+        const result: AirQualityResult = {
+          ...airQualityData,
+          gradeEmoji: gradeInfo.emoji,
+          backgroundColor: gradeInfo.color,
+          warningMessage: gradeInfo.warning,
+          ...(weatherData || {}),
+        };
+
+        await this.cacheManager.set(cacheKey, result, 300000); // 5분 캐시
+        return result;
+      } catch (error) {
+        this.logger.error('Error fetching data:', error);
+        throw error;
       }
-
-      const gradeInfo = this.calculateAirQualityGrade(
-        airQualityData.pm10Value,
-        airQualityData.pm25Value,
-      );
-
-      const result: AirQualityResult = {
-        ...airQualityData,
-        gradeEmoji: gradeInfo.emoji,
-        backgroundColor: gradeInfo.color,
-        warningMessage: gradeInfo.warning,
-        ...(weatherData || {}),
-      };
-
-      await this.cacheManager.set(cacheKey, result, 300000); // 5분 캐시
-      return result;
     } catch (error) {
       this.logger.error(
         '대기질 정보 조회 실패:',

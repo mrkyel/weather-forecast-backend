@@ -44,10 +44,12 @@ export class AirQualityController {
     type: AirQualityResponseDto,
   })
   async getAirQuality(
-    @Query() query: { latitude: string; longitude: string },
+    @Query() query: Record<string, string>,
   ): Promise<AirQualityResult> {
     try {
       const { latitude, longitude } = query;
+
+      this.logger.debug(`Raw query received:`, JSON.stringify(query, null, 2));
 
       this.logger.debug(
         `Raw coordinates received: latitude=${latitude}, longitude=${longitude}`,
@@ -61,8 +63,8 @@ export class AirQualityController {
         );
       }
 
-      const lat = Number(latitude);
-      const lon = Number(longitude);
+      const lat = parseFloat(latitude);
+      const lon = parseFloat(longitude);
 
       this.logger.debug(`Parsed coordinates: lat=${lat}, lon=${lon}`);
 
@@ -94,9 +96,23 @@ export class AirQualityController {
       this.logger.debug(
         `Calling service with coordinates: lat=${lat}, lon=${lon}`,
       );
-      const result = await this.airQualityService.getAirQuality(lat, lon);
-      this.logger.debug('Service returned result successfully');
-      return result;
+
+      try {
+        const result = await this.airQualityService.getAirQuality(lat, lon);
+        this.logger.debug(
+          'Service returned result successfully:',
+          JSON.stringify(result, null, 2),
+        );
+        return result;
+      } catch (serviceError) {
+        this.logger.error('Service error:', serviceError);
+        throw new HttpException(
+          serviceError instanceof Error
+            ? serviceError.message
+            : '대기질 정보를 가져오는데 실패했습니다.',
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
+      }
     } catch (error) {
       this.logger.error('Error in getAirQuality:', error);
       if (error instanceof HttpException) {
