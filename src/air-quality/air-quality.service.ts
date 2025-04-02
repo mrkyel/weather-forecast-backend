@@ -68,11 +68,11 @@ export class AirQualityService {
     private readonly configService: ConfigService,
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
   ) {
-    const apiKey = this.configService.get<string>('AIR_KOREA_API_KEY');
-    if (!apiKey) {
+    this.airKoreaApiKey = this.configService.get<string>('AIR_KOREA_API_KEY');
+    if (!this.airKoreaApiKey) {
+      this.logger.error('AIR_KOREA_API_KEY is not defined');
       throw new Error('AIR_KOREA_API_KEY is not defined');
     }
-    this.airKoreaApiKey = apiKey;
     this.weatherApiKey = '4a92ff83f5ce3e50f0e3d3f460fa3122';
   }
 
@@ -163,31 +163,55 @@ export class AirQualityService {
     }
   }
 
-  async getAirQuality(lat: number, lng: number): Promise<AirQualityResult> {
-    this.logger.debug(
-      `Fetching air quality data for coordinates: ${lat}, ${lng}`,
-    );
+  async getAirQuality(
+    latitude: number,
+    longitude: number,
+  ): Promise<AirQualityResult> {
+    try {
+      this.logger.log(
+        `Fetching air quality for coordinates: ${latitude}, ${longitude}`,
+      );
 
-    const [airQualityData, weatherData] = await Promise.all([
-      this.fetchAirQualityData(lat, lng),
-      this.getWeatherData(lat, lng),
-    ]);
+      // 캐시 키 생성
+      const cacheKey = `air-quality:${latitude}:${longitude}`;
 
-    const gradeInfo = this.calculateAirQualityGrade(
-      airQualityData.pm10Value,
-      airQualityData.pm25Value,
-    );
+      // 캐시된 데이터 확인
+      const cachedData = await this.cacheManager.get(cacheKey);
+      if (cachedData) {
+        this.logger.log('Returning cached data');
+        return cachedData;
+      }
 
-    return {
-      ...airQualityData,
-      gradeEmoji: gradeInfo.emoji,
-      backgroundColor: gradeInfo.color,
-      warningMessage: this.getWarningMessage(gradeInfo.grade),
-      temperature: Math.round(weatherData.main.temp),
-      feelsLike: Math.round(weatherData.main.feels_like),
-      weatherIcon: weatherData.weather[0].icon,
-      weatherDescription: weatherData.weather[0].description,
-    };
+      // API 호출 및 데이터 처리
+      const [airQualityData, weatherData] = await Promise.all([
+        this.fetchAirQualityData(latitude, longitude),
+        this.getWeatherData(latitude, longitude),
+      ]);
+
+      const gradeInfo = this.calculateAirQualityGrade(
+        airQualityData.pm10Value,
+        airQualityData.pm25Value,
+      );
+
+      const result: AirQualityResult = {
+        ...airQualityData,
+        gradeEmoji: gradeInfo.emoji,
+        backgroundColor: gradeInfo.color,
+        warningMessage: this.getWarningMessage(gradeInfo.grade),
+        temperature: Math.round(weatherData.main.temp),
+        feelsLike: Math.round(weatherData.main.feels_like),
+        weatherIcon: weatherData.weather[0].icon,
+        weatherDescription: weatherData.weather[0].description,
+      };
+
+      // 캐시에 데이터 저장
+      await this.cacheManager.set(cacheKey, result);
+
+      return result;
+    } catch (error) {
+      this.logger.error('Error fetching air quality data:', error);
+      throw error;
+    }
   }
 
   private calculateAirQualityGrade(

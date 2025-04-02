@@ -10,12 +10,12 @@ import { CacheModule } from '@nestjs/cache-manager';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env',
-      cache: true,
     }),
     CacheModule.register({
-      ttl: parseInt(process.env.CACHE_TTL) || 900,
       isGlobal: true,
+      ttl: parseInt(process.env.CACHE_TTL) || 900,
+      max: 100,
+      store: 'memory', // Redis 대신 메모리 캐시 사용
     }),
     ScheduleModule.forRoot(),
     AirQualityModule,
