@@ -1,4 +1,3 @@
-import { HttpService } from '@nestjs/axios';
 import { AxiosResponse } from 'axios';
 
 export interface AirKoreaStationResponse {

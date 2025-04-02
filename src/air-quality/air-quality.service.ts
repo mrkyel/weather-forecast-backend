@@ -10,6 +10,7 @@ import {
 } from './types/air-quality.types';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
+import { AxiosError } from 'axios';
 
 interface WeatherResponse {
   main: {
@@ -63,7 +64,11 @@ export class AirQualityService {
       this.logger.error('AIR_KOREA_API_KEY is not defined');
       throw new Error('AIR_KOREA_API_KEY is not defined');
     }
-    this.weatherApiKey = '4a92ff83f5ce3e50f0e3d3f460fa3122';
+    this.weatherApiKey = this.configService.get<string>('OPENWEATHER_API_KEY');
+    if (!this.weatherApiKey) {
+      this.logger.error('OPENWEATHER_API_KEY is not defined');
+      throw new Error('OPENWEATHER_API_KEY is not defined');
+    }
   }
 
   private async fetchAirQualityData(latitude: number, longitude: number) {
@@ -117,10 +122,36 @@ export class AirQualityService {
 
   private async fetchWeatherData(latitude: number, longitude: number) {
     try {
+      // 위도/경도 값 검증
+      if (
+        !latitude ||
+        !longitude ||
+        latitude < -90 ||
+        latitude > 90 ||
+        longitude < -180 ||
+        longitude > 180
+      ) {
+        this.logger.error(
+          `Invalid coordinates: lat=${latitude}, lon=${longitude}`,
+        );
+        return null;
+      }
+
       const weatherUrl = `${this.weatherUrl}?lat=${latitude}&lon=${longitude}&appid=${this.weatherApiKey}&units=metric&lang=kr`;
+      this.logger.debug(`Fetching weather data from: ${weatherUrl}`);
+
       const response = await firstValueFrom<{ data: WeatherResponse }>(
         this.httpService.get(weatherUrl),
       );
+
+      if (
+        !response.data ||
+        !response.data.main ||
+        !response.data.weather?.[0]
+      ) {
+        this.logger.error('Invalid weather data response');
+        return null;
+      }
 
       return {
         temperature: response.data.main.temp,
@@ -129,7 +160,16 @@ export class AirQualityService {
         weatherDescription: response.data.weather[0].description,
       };
     } catch (error) {
-      this.logger.error('Error fetching weather data:', error);
+      if (error instanceof AxiosError) {
+        this.logger.error(
+          `Weather API error: ${error.response?.status} - ${(error.response?.data as { message?: string })?.message || 'Unknown error'}`,
+        );
+      } else {
+        this.logger.error(
+          'Error fetching weather data:',
+          error instanceof Error ? error.message : 'Unknown error',
+        );
+      }
       return null;
     }
   }
