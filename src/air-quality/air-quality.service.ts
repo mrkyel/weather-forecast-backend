@@ -117,7 +117,7 @@ export class AirQualityService {
 
   private async fetchWeatherData(latitude: number, longitude: number) {
     try {
-      const weatherUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&appid=${this.weatherApiKey}&units=metric&lang=kr`;
+      const weatherUrl = `${this.weatherUrl}?lat=${latitude}&lon=${longitude}&appid=${this.weatherApiKey}&units=metric&lang=kr`;
       const response = await firstValueFrom<{ data: WeatherResponse }>(
         this.httpService.get(weatherUrl),
       );
