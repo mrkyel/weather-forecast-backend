@@ -1,3 +1,6 @@
+import { HttpService } from '@nestjs/axios';
+import { AxiosResponse } from 'axios';
+
 export interface AirKoreaStationResponse {
   response: {
     body: {
@@ -41,18 +44,42 @@ export interface AirKoreaQualityResponse {
 }
 
 export interface AirQualityResult {
+  sidoName: string;
+  stationName: string;
   pm10Value: number;
   pm25Value: number;
-  pm10Grade: number;
-  pm25Grade: number;
+  pm10Grade: string;
+  pm25Grade: string;
   dataTime: string;
-  stationName: string;
-  sidoName: string;
   gradeEmoji: string;
   backgroundColor: string;
   warningMessage: string;
-  temperature: number;
-  feelsLike: number;
-  weatherIcon: string;
-  weatherDescription: string;
+  temperature?: number;
+  feelsLike?: number;
+  weatherIcon?: string;
+  weatherDescription?: string;
 }
+
+interface StationItem {
+  stationName: string;
+  sidoName: string;
+}
+
+interface AirQualityItem {
+  pm10Value: string;
+  pm25Value: string;
+  pm10Grade: string;
+  pm25Grade: string;
+  dataTime: string;
+}
+
+interface ApiResponse<T> {
+  response: {
+    body: {
+      items: T[];
+    };
+  };
+}
+
+export type StationApiResponse = AxiosResponse<ApiResponse<StationItem>>;
+export type AirQualityApiResponse = AxiosResponse<ApiResponse<AirQualityItem>>;
