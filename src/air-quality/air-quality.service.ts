@@ -269,6 +269,21 @@ export class AirQualityService {
     longitude: number,
   ): Promise<AirQualityResult> {
     try {
+      // 좌표값 검증
+      if (
+        !latitude ||
+        !longitude ||
+        latitude < -90 ||
+        latitude > 90 ||
+        longitude < -180 ||
+        longitude > 180
+      ) {
+        this.logger.error(
+          `Invalid coordinates provided: lat=${latitude}, lon=${longitude}`,
+        );
+        throw new Error('유효하지 않은 좌표값입니다.');
+      }
+
       const cacheKey = `air-quality-${latitude}-${longitude}`;
       const cachedData =
         await this.cacheManager.get<AirQualityResult>(cacheKey);
