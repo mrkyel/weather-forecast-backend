@@ -81,7 +81,20 @@ export class AirQualityController {
         );
       }
 
+      // 한국 좌표 범위 검증 (위도: 33° ~ 38°, 경도: 124° ~ 131°)
+      if (lat < 33 || lat > 38 || lon < 124 || lon > 131) {
+        this.logger.error(`Coordinates outside Korea: lat=${lat}, lon=${lon}`);
+        throw new HttpException(
+          '한국 영역을 벗어난 좌표입니다.',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      this.logger.debug(
+        `Calling service with coordinates: lat=${lat}, lon=${lon}`,
+      );
       const result = await this.airQualityService.getAirQuality(lat, lon);
+      this.logger.debug('Service returned result successfully');
       return result;
     } catch (error) {
       this.logger.error('Error in getAirQuality:', error);

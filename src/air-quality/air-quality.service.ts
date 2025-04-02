@@ -5,7 +5,6 @@ import { Inject } from '@nestjs/common';
 import { Cache } from 'cache-manager';
 import {
   AirQualityResult,
-  StationApiResponse,
   AirQualityApiResponse,
 } from './types/air-quality.types';
 import { HttpService } from '@nestjs/axios';
@@ -33,6 +32,15 @@ export class AirQualityService {
     'https://api.openweathermap.org/data/2.5/weather';
   private readonly weatherApiKey: string;
 
+  // WGS84 to TM 좌표 변환 상수
+  private readonly RE = 6371.00877; // 지구 반경(km)
+  private readonly GRID = 5.0; // 격자 간격(km)
+  private readonly SLAT1 = 30.0; // 투영 위도1(degree)
+  private readonly SLAT2 = 60.0; // 투영 위도2(degree)
+  private readonly OLON = 126.0; // 기준점 경도(degree)
+  private readonly XO = 43; // 기준점 X좌표(GRID)
+  private readonly YO = 136; // 기준점 Y좌표(GRID)
+
   // 시도 목록
   private readonly sidoList = [
     '서울',
@@ -59,16 +67,49 @@ export class AirQualityService {
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
     private readonly httpService: HttpService,
   ) {
-    this.airKoreaApiKey = this.configService.get<string>('AIR_KOREA_API_KEY');
-    if (!this.airKoreaApiKey) {
-      this.logger.error('AIR_KOREA_API_KEY is not defined');
-      throw new Error('AIR_KOREA_API_KEY is not defined');
-    }
-    this.weatherApiKey = this.configService.get<string>('OPENWEATHER_API_KEY');
-    if (!this.weatherApiKey) {
-      this.logger.error('OPENWEATHER_API_KEY is not defined');
-      throw new Error('OPENWEATHER_API_KEY is not defined');
-    }
+    this.airKoreaApiKey =
+      this.configService.getOrThrow<string>('AIR_KOREA_API_KEY');
+    this.weatherApiKey = this.configService.getOrThrow<string>(
+      'OPENWEATHER_API_KEY',
+    );
+
+    this.logger.debug('API Keys loaded successfully');
+  }
+
+  // WGS84 좌표를 TM 좌표로 변환
+  private convertWGS84ToTM(lat: number, lon: number): { x: number; y: number } {
+    const DEGRAD = Math.PI / 180.0;
+    const re = this.RE / this.GRID;
+    const slat1 = this.SLAT1 * DEGRAD;
+    const slat2 = this.SLAT2 * DEGRAD;
+    const olon = this.OLON * DEGRAD;
+
+    let sn =
+      Math.tan(Math.PI * 0.25 + slat2 * 0.5) /
+      Math.tan(Math.PI * 0.25 + slat1 * 0.5);
+    sn = Math.log(Math.cos(slat1) / Math.cos(slat2)) / Math.log(sn);
+
+    let sf = Math.tan(Math.PI * 0.25 + slat1 * 0.5);
+    sf = (Math.pow(sf, sn) * Math.cos(slat1)) / sn;
+
+    let ro = Math.tan(Math.PI * 0.25 + slat1 * 0.5);
+    ro = (re * sf) / Math.pow(ro, sn);
+
+    const rs = { x: 0, y: 0 };
+    const latRad = lat * DEGRAD;
+    const lonRad = lon * DEGRAD;
+
+    let xn = lonRad - olon;
+    let yn = Math.log(Math.tan(Math.PI * 0.25 + latRad * 0.5));
+    yn = re * sf * Math.atan(yn) - ro;
+
+    xn = re * sf * xn;
+    yn = re * sf * yn;
+
+    rs.x = xn + this.XO;
+    rs.y = yn + this.YO;
+
+    return rs;
   }
 
   private async fetchAirQualityData(latitude: number, longitude: number) {
@@ -77,37 +118,37 @@ export class AirQualityService {
         `Fetching air quality data from API for coordinates: ${latitude}, ${longitude}`,
       );
 
-      const nearestStationUrl = `https://apis.data.go.kr/B552584/MsrstnInfoInqireSvc/getNearbyMsrstnList?serviceKey=${this.airKoreaApiKey}&returnType=json&tmX=${longitude}&tmY=${latitude}`;
+      // 먼저 시도별 대기질 데이터를 가져옵니다
+      const sidoUrl = `https://apis.data.go.kr/B552584/ArpltnInforInqireSvc/getCtprvnRltmMesureDnsty?serviceKey=${encodeURIComponent(this.airKoreaApiKey)}&returnType=json&sidoName=서울&ver=1.0`;
 
-      this.logger.debug('Calling nearest station API...');
-      const stationResponse = await firstValueFrom<StationApiResponse>(
-        this.httpService.get(nearestStationUrl),
+      this.logger.debug('Calling sido air quality API...');
+      const sidoResponse = await firstValueFrom<AirQualityApiResponse>(
+        this.httpService.get(sidoUrl, {
+          headers: {
+            Accept: 'application/json',
+          },
+        }),
       );
 
-      if (!stationResponse.data?.response?.body?.items?.[0]) {
-        throw new Error('No station found near the coordinates');
-      }
-
-      const station = stationResponse.data.response.body.items[0];
-      this.logger.log(`Found nearest station: ${station.stationName}`);
-
-      const airQualityUrl = `https://apis.data.go.kr/B552584/ArpltnInforInqireSvc/getMsrstnAcctoRltmMesureDnsty?serviceKey=${this.airKoreaApiKey}&returnType=json&stationName=${encodeURIComponent(station.stationName)}&dataTerm=DAILY`;
-
-      this.logger.debug('Calling air quality API...');
-      const airQualityResponse = await firstValueFrom<AirQualityApiResponse>(
-        this.httpService.get(airQualityUrl),
+      this.logger.debug(
+        'API Response:',
+        JSON.stringify(sidoResponse.data, null, 2),
       );
 
-      if (!airQualityResponse.data?.response?.body?.items?.[0]) {
-        throw new Error('No air quality data available');
+      if (!sidoResponse.data?.response?.body?.items?.[0]) {
+        this.logger.error(
+          'No air quality data available. Response:',
+          sidoResponse.data,
+        );
+        throw new Error('대기질 데이터를 가져올 수 없습니다.');
       }
 
-      const airQualityData = airQualityResponse.data.response.body.items[0];
+      const airQualityData = sidoResponse.data.response.body.items[0];
       this.logger.log('Successfully fetched air quality data');
 
       return {
-        sidoName: station.sidoName,
-        stationName: station.stationName,
+        sidoName: airQualityData.sidoName,
+        stationName: airQualityData.stationName,
         pm10Value: parseInt(airQualityData.pm10Value) || 0,
         pm25Value: parseInt(airQualityData.pm25Value) || 0,
         pm10Grade: airQualityData.pm10Grade || '1',
@@ -116,12 +157,22 @@ export class AirQualityService {
       };
     } catch (error) {
       this.logger.error('Error in fetchAirQualityData:', error);
+      if ((error as AxiosError).response) {
+        this.logger.error(
+          'API Error Response:',
+          (error as AxiosError).response?.data,
+        );
+      }
       throw error;
     }
   }
 
   private async fetchWeatherData(latitude: number, longitude: number) {
     try {
+      this.logger.debug(
+        `fetchWeatherData called with coordinates: lat=${latitude}, lon=${longitude}`,
+      );
+
       // 위도/경도 값 검증
       if (
         latitude === undefined ||
@@ -140,14 +191,14 @@ export class AirQualityService {
       }
 
       this.logger.debug(
-        `Fetching weather data for coordinates: ${latitude}, ${longitude}`,
+        `Making weather API request for coordinates: ${latitude}, ${longitude}`,
       );
 
       const response = await firstValueFrom(
         this.httpService.get<WeatherResponse>(this.weatherUrl, {
           params: {
-            lat: latitude,
-            lon: longitude,
+            lat: latitude.toString(),
+            lon: longitude.toString(),
             appid: this.weatherApiKey,
             units: 'metric',
             lang: 'kr',
@@ -271,7 +322,7 @@ export class AirQualityService {
   ): Promise<AirQualityResult> {
     try {
       this.logger.debug(
-        `Service received coordinates: lat=${latitude}, lon=${longitude}`,
+        `getAirQuality called with coordinates: lat=${latitude}, lon=${longitude}`,
       );
 
       // 좌표값 검증

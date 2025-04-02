@@ -64,7 +64,9 @@ interface StationItem {
   sidoName: string;
 }
 
-interface AirQualityItem {
+export interface AirQualityItem {
+  sidoName: string;
+  stationName: string;
   pm10Value: string;
   pm25Value: string;
   pm10Grade: string;

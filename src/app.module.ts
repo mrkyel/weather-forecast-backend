@@ -10,6 +10,8 @@ import { CacheModule } from '@nestjs/cache-manager';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      envFilePath: '.env',
+      cache: true,
     }),
     CacheModule.register({
       isGlobal: true,

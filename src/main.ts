@@ -2,34 +2,30 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
-import { ConfigService } from '@nestjs/config';
 import * as cors from 'cors';
 
-let app;
-
 async function bootstrap() {
-  if (!app) {
-    app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule);
 
-    // CORS 설정
-    app.use(cors());
+  // CORS 설정
+  app.use(cors());
 
-    // Validation Pipe
-    app.useGlobalPipes(new ValidationPipe());
+  // Validation Pipe
+  app.useGlobalPipes(new ValidationPipe());
 
-    // Swagger 설정
-    const config = new DocumentBuilder()
-      .setTitle('Fine Dust API')
-      .setDescription('미세먼지 정보 제공 API')
-      .setVersion('1.0')
-      .build();
-    const document = SwaggerModule.createDocument(app, config);
-    SwaggerModule.setup('api', app, document);
+  // Swagger 설정
+  const config = new DocumentBuilder()
+    .setTitle('Fine Dust API')
+    .setDescription('미세먼지 정보 제공 API')
+    .setVersion('1.0')
+    .build();
+  const document = SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup('api', app, document);
 
-    await app.init();
-  }
-
-  return app.getHttpAdapter().getInstance();
+  await app.listen(3000);
+  console.log('NestJS 서버가 시작되었습니다. http://localhost:3000');
 }
 
-export default bootstrap;
+bootstrap().catch((error) => {
+  console.error('서버 시작 중 오류가 발생했습니다:', error);
+});
