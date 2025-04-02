@@ -48,14 +48,35 @@ export class AirQualityController {
     @Query('longitude') longitude: string,
   ): Promise<AirQualityResult> {
     try {
-      this.logger.log(`Received coordinates: ${latitude}, ${longitude}`);
+      this.logger.debug(
+        `Raw coordinates received: latitude=${latitude}, longitude=${longitude}`,
+      );
 
-      const lat = parseFloat(latitude);
-      const lon = parseFloat(longitude);
-
-      if (isNaN(lat) || isNaN(lon)) {
+      if (!latitude || !longitude) {
+        this.logger.error('Missing coordinates');
         throw new HttpException(
-          'Invalid coordinates provided',
+          '위도와 경도가 필요합니다.',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      const lat = Number(latitude);
+      const lon = Number(longitude);
+
+      this.logger.debug(`Parsed coordinates: lat=${lat}, lon=${lon}`);
+
+      if (Number.isNaN(lat) || Number.isNaN(lon)) {
+        this.logger.error(`Invalid coordinates: lat=${lat}, lon=${lon}`);
+        throw new HttpException(
+          '유효하지 않은 좌표값입니다.',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+        this.logger.error(`Coordinates out of range: lat=${lat}, lon=${lon}`);
+        throw new HttpException(
+          '좌표값이 허용 범위를 벗어났습니다.',
           HttpStatus.BAD_REQUEST,
         );
       }
@@ -68,7 +89,9 @@ export class AirQualityController {
         throw error;
       }
       throw new HttpException(
-        'Failed to fetch air quality data',
+        error instanceof Error
+          ? error.message
+          : '대기질 정보를 가져오는데 실패했습니다.',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }

@@ -124,33 +124,40 @@ export class AirQualityService {
     try {
       // 위도/경도 값 검증
       if (
-        !latitude ||
-        !longitude ||
+        latitude === undefined ||
+        longitude === undefined ||
+        Number.isNaN(latitude) ||
+        Number.isNaN(longitude) ||
         latitude < -90 ||
         latitude > 90 ||
         longitude < -180 ||
         longitude > 180
       ) {
         this.logger.error(
-          `Invalid coordinates: lat=${latitude}, lon=${longitude}`,
+          `Invalid coordinates in fetchWeatherData: lat=${latitude}, lon=${longitude}`,
         );
-        return null;
+        throw new Error('유효하지 않은 좌표값입니다.');
       }
 
-      const weatherUrl = `${this.weatherUrl}?lat=${latitude}&lon=${longitude}&appid=${this.weatherApiKey}&units=metric&lang=kr`;
-      this.logger.debug(`Fetching weather data from: ${weatherUrl}`);
-
-      const response = await firstValueFrom<{ data: WeatherResponse }>(
-        this.httpService.get(weatherUrl),
+      this.logger.debug(
+        `Fetching weather data for coordinates: ${latitude}, ${longitude}`,
       );
 
-      if (
-        !response.data ||
-        !response.data.main ||
-        !response.data.weather?.[0]
-      ) {
+      const response = await firstValueFrom(
+        this.httpService.get<WeatherResponse>(this.weatherUrl, {
+          params: {
+            lat: latitude,
+            lon: longitude,
+            appid: this.weatherApiKey,
+            units: 'metric',
+            lang: 'kr',
+          },
+        }),
+      );
+
+      if (!response.data?.main || !response.data?.weather?.[0]) {
         this.logger.error('Invalid weather data response');
-        return null;
+        throw new Error('날씨 데이터 형식이 올바르지 않습니다.');
       }
 
       return {
@@ -160,17 +167,11 @@ export class AirQualityService {
         weatherDescription: response.data.weather[0].description,
       };
     } catch (error) {
-      if (error instanceof AxiosError) {
-        this.logger.error(
-          `Weather API error: ${error.response?.status} - ${(error.response?.data as { message?: string })?.message || 'Unknown error'}`,
-        );
-      } else {
-        this.logger.error(
-          'Error fetching weather data:',
-          error instanceof Error ? error.message : 'Unknown error',
-        );
-      }
-      return null;
+      this.logger.error(
+        '날씨 데이터 조회 실패:',
+        error instanceof Error ? error.message : '알 수 없는 오류',
+      );
+      throw error;
     }
   }
 
@@ -269,19 +270,34 @@ export class AirQualityService {
     longitude: number,
   ): Promise<AirQualityResult> {
     try {
+      this.logger.debug(
+        `Service received coordinates: lat=${latitude}, lon=${longitude}`,
+      );
+
       // 좌표값 검증
       if (
-        !latitude ||
-        !longitude ||
+        latitude === undefined ||
+        longitude === undefined ||
+        Number.isNaN(latitude) ||
+        Number.isNaN(longitude)
+      ) {
+        this.logger.error(
+          `Invalid coordinates in service: lat=${latitude}, lon=${longitude}`,
+        );
+        throw new Error('유효하지 않은 좌표값입니다.');
+      }
+
+      // 좌표 범위 검증
+      if (
         latitude < -90 ||
         latitude > 90 ||
         longitude < -180 ||
         longitude > 180
       ) {
         this.logger.error(
-          `Invalid coordinates provided: lat=${latitude}, lon=${longitude}`,
+          `Coordinates out of range: lat=${latitude}, lon=${longitude}`,
         );
-        throw new Error('유효하지 않은 좌표값입니다.');
+        throw new Error('좌표값이 허용 범위를 벗어났습니다.');
       }
 
       const cacheKey = `air-quality-${latitude}-${longitude}`;
@@ -289,14 +305,19 @@ export class AirQualityService {
         await this.cacheManager.get<AirQualityResult>(cacheKey);
 
       if (cachedData) {
-        this.logger.log('Returning cached air quality data');
+        this.logger.debug('Returning cached air quality data');
         return cachedData;
       }
 
+      this.logger.debug('Fetching fresh air quality data');
       const [airQualityData, weatherData] = await Promise.all([
         this.fetchAirQualityData(latitude, longitude),
         this.fetchWeatherData(latitude, longitude),
       ]);
+
+      if (!airQualityData) {
+        throw new Error('대기질 데이터를 가져올 수 없습니다.');
+      }
 
       const gradeInfo = this.calculateAirQualityGrade(
         airQualityData.pm10Value,
@@ -314,7 +335,10 @@ export class AirQualityService {
       await this.cacheManager.set(cacheKey, result, 300000); // 5분 캐시
       return result;
     } catch (error) {
-      this.logger.error('Error in getAirQuality:', error);
+      this.logger.error(
+        '대기질 정보 조회 실패:',
+        error instanceof Error ? error.message : '알 수 없는 오류',
+      );
       throw error;
     }
   }
