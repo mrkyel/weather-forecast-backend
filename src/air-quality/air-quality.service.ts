@@ -176,10 +176,11 @@ export class AirQualityService {
       const cacheKey = `air-quality:${latitude}:${longitude}`;
 
       // 캐시된 데이터 확인
-      const cachedData = await this.cacheManager.get(cacheKey);
+      const cachedData =
+        await this.cacheManager.get<AirQualityResult>(cacheKey);
       if (cachedData) {
         this.logger.log('Returning cached data');
-        return cachedData;
+        return cachedData as AirQualityResult;
       }
 
       // API 호출 및 데이터 처리
